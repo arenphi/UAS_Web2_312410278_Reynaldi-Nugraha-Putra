@@ -2,10 +2,13 @@
 
 **Proyek:** Sistem Manajemen Inventaris Barang (E-Inventory)  
 **Arsitektur:** Decoupled Architecture (Backend API + Frontend SPA) 
-**Nama:** Reynaldi Nugraha Putra
-**NIM:** 312410278
-**Kelas:** I241D
-**Mata Kuliah:** Pemrograman Web 2 - UAS
+
+---
+
+### Nama: Reynaldi Nugraha Putra
+### NIM: 312410278
+### Kelas: I241D
+### Mata Kuliah: Pemrograman Web 2 - UAS
 
 ---
 
