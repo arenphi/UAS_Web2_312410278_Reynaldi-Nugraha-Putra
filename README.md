@@ -1,7 +1,10 @@
 # E-Inventory System - UAS Tugas Proyek Akhir Pemrograman Web 2
 
 **Proyek:** Sistem Manajemen Inventaris Barang (E-Inventory)  
-**Arsitektur:** Decoupled Architecture (Backend API + Frontend SPA)  
+**Arsitektur:** Decoupled Architecture (Backend API + Frontend SPA) 
+**Nama:** Reynaldi Nugraha Putra
+**NIM:** 312410278
+**Kelas:** I241D
 **Mata Kuliah:** Pemrograman Web 2 - UAS
 
 ---
