@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Inventory System - Tugas UAS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans">
+
+    <div id="app">
+        <router-view></router-view>
+    </div>
+
+    <script>
+        const { ref, onMounted } = Vue;
+
+        // --- CLEAR OLD CACHE & ENSURE LANDING PAGE ON FIRST LOAD ---
+        window.addEventListener('load', () => {
+            // Check if first time visit (no session data)
+            if (!localStorage.getItem('_app_initialized')) {
+                localStorage.clear();
+                localStorage.setItem('_app_initialized', 'true');
+                console.log('First visit: Cleared old session data');
+            }
+        });
+
+        // --- GLOBAL AXIOS INTERCEPTORS ---
+        axios.interceptors.request.use(config => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        }, error => {
+            return Promise.reject(error);
+        });
+
+        axios.interceptors.response.use(response => response, error => {
+            // Only handle 401 for protected routes (dashboard)
+            // Don't interrupt public pages (home, login, register)
+            if (error.response && error.response.status === 401) {
+                const currentHash = window.location.hash;
+                const isProtectedRoute = currentHash.includes('dashboard');
+                
+                if (isProtectedRoute) {
+                    alert('Sesi Anda telah habis atau tidak valid! Silakan login kembali.');
+                    localStorage.clear();
+                    window.location.hash = '#/login';
+                }
+            }
+            return Promise.reject(error);
+        });
+
+        // --- 0. KOMPONEN VIEW: LANDING PAGE HOME (PUBLIC) ---
+        const HomeComponent = {
+            template: `
+            <div class="bg-slate-950 text-slate-100 font-sans">
+                <!-- NAVBAR STICKY -->
+                <nav class="sticky top-0 z-50 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.65)]">
+                    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                        <div class="flex items-center gap-3 font-bold text-xl text-cyan-300">
+                            <span class="text-3xl">📦</span>
+                            <span>E-Inventory</span>
+                        </div>
+                        <router-link to="/login" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-6 py-2 rounded-2xl transition font-semibold text-sm shadow-lg shadow-cyan-500/20">
+                            Login
+                        </router-link>
+                    </div>
+                </nav>
+
+                <!-- HERO SECTION -->
+                <section class="min-h-screen flex flex-col justify-center items-center bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_35%),linear-gradient(180deg,_#020617,_#111827)] px-4">
+                    <div class="text-center max-w-3xl animate-fade-in">
+                        <span class="text-7xl block mb-4">📦</span>
+                        <h1 class="text-5xl md:text-6xl font-extrabold text-slate-50 mb-4 tracking-tight">Sistem Manajemen Inventaris Barang</h1>
+                        <p class="text-xl md:text-2xl text-slate-300 mb-10 max-w-2xl mx-auto">Kelola stok barang, kategori, supplier, dan histori transaksi dengan tampilan modern dengan nuansa gelap yang elegan.</p>
+                        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                            <router-link to="/login" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-8 py-3 rounded-full font-semibold transition shadow-lg shadow-cyan-500/20">
+                                Masuk ke Admin Panel
+                            </router-link>
+                            <button @click="scrollToFeatures" class="bg-slate-800/80 hover:bg-slate-700 text-slate-200 px-8 py-3 rounded-full font-semibold transition border border-slate-700">
+                                Pelajari Lebih Lanjut ↓
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- STATISTICS SECTION -->
+                <section class="py-16 px-4 bg-slate-950">
+                    <div class="max-w-6xl mx-auto">
+                        <h2 class="text-3xl font-bold text-center mb-12 text-slate-100">Statistik Sistem Inventaris</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 text-center hover:border-cyan-500 transition shadow-[0_20px_60px_-40px_rgba(56,189,248,0.45)]">
+                                <div class="text-4xl font-bold text-cyan-300">{{ totalBarang }}</div>
+                                <p class="text-slate-400 mt-2">Total Barang</p>
+                            </div>
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 text-center hover:border-emerald-400 transition shadow-[0_20px_60px_-40px_rgba(16,185,129,0.3)]">
+                                <div class="text-4xl font-bold text-emerald-300">{{ totalKategori }}</div>
+                                <p class="text-slate-400 mt-2">Kategori</p>
+                            </div>
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 text-center hover:border-purple-400 transition shadow-[0_20px_60px_-40px_rgba(168,85,247,0.3)]">
+                                <div class="text-4xl font-bold text-violet-300">{{ totalSupplier }}</div>
+                                <p class="text-slate-400 mt-2">Supplier</p>
+                            </div>
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 text-center hover:border-orange-400 transition shadow-[0_20px_60px_-40px_rgba(249,115,22,0.3)]">
+                                <div class="text-4xl font-bold text-orange-300">{{ totalUsers }}</div>
+                                <p class="text-slate-400 mt-2">Admin Pengguna</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- FEATURES SECTION -->
+                <section ref="featuresSection" class="py-16 px-4 bg-slate-950">
+                    <div class="max-w-6xl mx-auto">
+                        <h2 class="text-3xl font-bold text-center mb-12 text-slate-100">Fitur Unggulan</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            <!-- Feature 1 -->
+                            <div class="bg-slate-900/80 p-8 rounded-3xl border border-slate-800 hover:border-cyan-500 transition shadow-[0_20px_60px_-40px_rgba(56,189,248,0.45)]">
+                                <div class="text-3xl mb-4">🔐</div>
+                                <h3 class="text-xl font-bold text-slate-100 mb-3">Sistem Keamanan Token</h3>
+                                <p class="text-slate-400">Autentikasi dengan Bearer Token yang aman untuk melindungi data inventaris Anda.</p>
+                            </div>
+
+                            <!-- Feature 2 -->
+                            <div class="bg-slate-900/80 p-8 rounded-3xl border border-slate-800 hover:border-emerald-400 transition shadow-[0_20px_60px_-40px_rgba(16,185,129,0.3)]">
+                                <div class="text-3xl mb-4">📊</div>
+                                <h3 class="text-xl font-bold text-slate-100 mb-3">Database Relasional</h3>
+                                <p class="text-slate-400">5 tabel terintegrasi dengan relasi foreign key untuk manajemen data yang konsisten.</p>
+                            </div>
+
+                            <!-- Feature 3 -->
+                            <div class="bg-slate-900/80 p-8 rounded-3xl border border-slate-800 hover:border-violet-400 transition shadow-[0_20px_60px_-40px_rgba(168,85,247,0.3)]">
+                                <div class="text-3xl mb-4">⚡</div>
+                                <h3 class="text-xl font-bold text-slate-100 mb-3">RESTful API</h3>
+                                <p class="text-slate-400">Endpoint API lengkap untuk operasi CRUD dengan response JSON yang terstruktur.</p>
+                            </div>
+
+                            <!-- Feature 4 -->
+                            <div class="bg-slate-900/80 p-8 rounded-3xl border border-slate-800 hover:border-orange-400 transition shadow-[0_20px_60px_-40px_rgba(249,115,22,0.3)]">
+                                <div class="text-3xl mb-4">🎨</div>
+                                <h3 class="text-xl font-bold text-slate-100 mb-3">UI Modern TailwindCSS</h3>
+                                <p class="text-slate-400">Desain responsif dan intuitif menggunakan utility-first CSS framework terkini.</p>
+                            </div>
+
+                            <!-- Feature 5 -->
+                            <div class="bg-slate-900/80 p-8 rounded-3xl border border-slate-800 hover:border-rose-400 transition shadow-[0_20px_60px_-40px_rgba(244,63,94,0.3)]">
+                                <div class="text-3xl mb-4">📱</div>
+                                <h3 class="text-xl font-bold text-slate-100 mb-3">Single Page Application</h3>
+                                <p class="text-slate-400">Navigasi tanpa reload halaman dengan Vue Router untuk pengalaman pengguna yang smooth.</p>
+                            </div>
+
+                            <!-- Feature 6 -->
+                            <div class="bg-slate-900/80 p-8 rounded-3xl border border-slate-800 hover:border-cyan-400 transition shadow-[0_20px_60px_-40px_rgba(56,189,248,0.3)]">
+                                <div class="text-3xl mb-4">🔄</div>
+                                <h3 class="text-xl font-bold text-slate-100 mb-3">Real-Time Data Sync</h3>
+                                <p class="text-slate-400">Axios interceptor otomatis menyinkronkan token dan menangani error dengan seamless.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TEKNOLOGI SECTION -->
+                <section class="py-16 px-4 bg-slate-950">
+                    <div class="max-w-6xl mx-auto">
+                        <h2 class="text-3xl font-bold text-center mb-12 text-slate-100">Stack Teknologi</h2>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-6 text-center">
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 hover:border-cyan-500 transition shadow-[0_20px_60px_-40px_rgba(56,189,248,0.35)]">
+                                <div class="text-4xl mb-2">🚀</div>
+                                <p class="font-semibold text-slate-100">CodeIgniter 4</p>
+                                <p class="text-xs text-slate-400 mt-1">Backend Framework</p>
+                            </div>
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 hover:border-emerald-400 transition shadow-[0_20px_60px_-40px_rgba(16,185,129,0.3)]">
+                                <div class="text-4xl mb-2">💚</div>
+                                <p class="font-semibold text-slate-100">VueJS 3</p>
+                                <p class="text-xs text-slate-400 mt-1">Frontend Framework</p>
+                            </div>
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 hover:border-violet-400 transition shadow-[0_20px_60px_-40px_rgba(168,85,247,0.3)]">
+                                <div class="text-4xl mb-2">🎨</div>
+                                <p class="font-semibold text-slate-100">TailwindCSS</p>
+                                <p class="text-xs text-slate-400 mt-1">UI Framework</p>
+                            </div>
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 hover:border-cyan-300 transition shadow-[0_20px_60px_-40px_rgba(56,189,248,0.3)]">
+                                <div class="text-4xl mb-2">🔗</div>
+                                <p class="font-semibold text-slate-100">Axios</p>
+                                <p class="text-xs text-slate-400 mt-1">HTTP Client</p>
+                            </div>
+                            <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 hover:border-orange-400 transition shadow-[0_20px_60px_-40px_rgba(249,115,22,0.25)]">
+                                <div class="text-4xl mb-2">🗄️</div>
+                                <p class="font-semibold text-slate-100">MySQL/MariaDB</p>
+                                <p class="text-xs text-slate-400 mt-1">Database</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- CTA SECTION -->
+                <section class="py-16 px-4 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800">
+                    <div class="max-w-4xl mx-auto text-center text-slate-100">
+                        <h2 class="text-3xl font-bold mb-4">Siap Mengelola Inventaris Anda?</h2>
+                        <p class="text-lg mb-8 text-slate-300">Login sekarang ke admin panel dan mulai kelola stok barang Anda dengan sistem yang terintegrasi.</p>
+                        <router-link to="/login" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-8 py-3 rounded-full font-semibold transition shadow-xl shadow-cyan-500/20 inline-block">
+                            Masuk Sekarang 🚀
+                        </router-link>
+                    </div>
+                </section>
+
+                <!-- FOOTER -->
+                <footer class="bg-slate-950 text-slate-300 py-12 px-4">
+                    <div class="max-w-6xl mx-auto">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+                            <div>
+                                <h3 class="text-slate-100 font-bold mb-4">E-Inventory System</h3>
+                                <p class="text-sm text-slate-400">Sistem manajemen inventaris modern dengan arsitektur decoupled untuk efisiensi maksimal.</p>
+                            </div>
+                            <div>
+                                <h3 class="text-slate-100 font-bold mb-4">Fitur Utama</h3>
+                                <ul class="text-sm space-y-2 text-slate-400">
+                                    <li>✅ Manajemen Barang</li>
+                                    <li>✅ Kategori & Supplier</li>
+                                    <li>✅ Histori Transaksi</li>
+                                    <li>✅ Token Security</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h3 class="text-slate-100 font-bold mb-4">Informasi</h3>
+                                <ul class="text-sm space-y-2 text-slate-400">
+                                    <li>📧 Email: reynaldinp18@gmail.com</li>
+                                    <li>📱 Phone: +62 896 0877 4256</li>
+                                    <li>📍 Lokasi: Cikarang, Indonesia</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="border-t border-slate-700 pt-8 text-center text-sm text-slate-500">
+                            <p>&copy; 2026 E-Inventory System. All rights reserved.</p>
+                        </div>
+                    </div>
+                </footer>
+            </div>
+            `,
+            setup() {
+                const featuresSection = ref(null);
+                const totalBarang = ref(0);
+                const totalKategori = ref(0);
+                const totalSupplier = ref(0);
+                const totalUsers = ref(0);
+
+                const scrollToFeatures = () => {
+                    if (featuresSection.value) {
+                        featuresSection.value.scrollIntoView({ behavior: 'smooth' });
+                    }
+                };
+
+                const loadStatistics = async () => {
+                    // For landing page (public), use demo statistics
+                    // In production, you can create a public API endpoint for these stats
+                    totalBarang.value = 4;
+                    totalKategori.value = 3;
+                    totalSupplier.value = 3;
+                    totalUsers.value = 4;
+                };
+
+                onMounted(() => {
+                    loadStatistics();
+                });
+
+                return { featuresSection, totalBarang, totalKategori, totalSupplier, totalUsers, scrollToFeatures };
+            }
+        };
+
+        // --- 1. KOMPONEN VIEW: LOGIN ---
+        const LoginComponent = {
+            template: `
+            <div class="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+                <div class="max-w-md w-full">
+                    <!-- Tombol Kembali ke Landing Page -->
+                    <router-link to="/" class="inline-flex items-center gap-2 mb-6 text-slate-400 hover:text-slate-200 transition font-medium text-sm">
+                        <span>←</span>
+                        <span>Kembali ke Halaman Utama</span>
+                    </router-link>
+                    
+                    <div class="bg-slate-900/95 p-8 rounded-3xl shadow-[0_30px_80px_-40px_rgba(15,23,42,0.85)] border border-slate-700">
+                        <div class="text-center mb-6">
+                            <span class="text-4xl">📦</span>
+                            <h2 class="text-2xl font-bold text-slate-100 mt-2">E-Inventory Login</h2>
+                            <p class="text-sm text-slate-400">Masuk untuk mengelola data inventaris dengan aman.</p>
+                        </div>
+                        <form @submit.prevent="handleLogin" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300">Username Admin</label>
+                                <input v-model="username" type="text" required class="mt-1 w-full px-4 py-3 bg-slate-950 border border-slate-700 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300">Password</label>
+                                <div class="relative mt-1">
+                                    <input :type="showPassword ? 'text' : 'password'" v-model="password" required class="w-full px-4 py-3 bg-slate-950 border border-slate-700 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70 pr-10">
+                                    <button type="button" @click="showPassword = !showPassword" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-100">
+                                        <span v-if="showPassword">🔒</span>
+                                        <span v-else>👁️</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold py-3 rounded-2xl transition shadow-lg shadow-cyan-500/20">
+                                Masuk ke Dashboard
+                            </button>
+                        </form>
+                        <div class="mt-6 text-center">
+                            <p class="text-center text-sm text-slate-200">
+                                Belum punya akun admin?
+                                <router-link to="/register" class="ml-2 inline-block text-cyan-300 font-semibold px-3 py-1 rounded-full bg-cyan-900/10 hover:bg-cyan-900/20 transition">
+                                    Daftar Akun Baru
+                                </router-link>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            `,
+            setup() {
+                const username = ref('');
+                const password = ref('');
+                const showPassword = ref(false);
+                const router = VueRouter.useRouter();
+
+                const handleLogin = () => {
+                    axios.post('http://localhost:8080/api/login', {
+                        username: username.value,
+                        password: password.value
+                    })
+                    .then(response => {
+                        console.log('Login response', response);
+                        const resData = response.data;
+                        const token = resData.token || (resData.data && resData.data.token);
+                        const isSuccess = response.status === 200 || resData.status === 200;
+                        console.log('resData', resData, 'token', token, 'isSuccess', isSuccess);
+
+                        if (isSuccess && token) {
+                            localStorage.setItem('isLoggedIn', 'true');
+                            localStorage.setItem('token', token);
+                            
+                            alert('Login Berhasil! Mengalihkan ke Dashboard...');
+                            console.log('Attempting safeNavigate to /dashboard/barang');
+                            window.safeNavigate('/dashboard/barang');
+                        } else {
+                            alert('Gagal Login! Periksa kembali Username dan Password.');
+                        }
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        const msg = error.response && error.response.data.messages ? error.response.data.messages.error : 'Periksa kembali Username dan Password.';
+                        alert('Gagal Login: ' + msg);
+                    });
+                };
+                return { username, password, showPassword, handleLogin };
+            }
+        };
+
+        // --- 2. KOMPONEN VIEW: REGISTRASI (AKUN BARU) ---
+        const RegisterComponent = {
+            template: `
+            <div class="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+                <div class="max-w-md w-full bg-slate-900/95 p-8 rounded-3xl shadow-[0_30px_80px_-40px_rgba(15,23,42,0.85)] border border-slate-700">
+                    <div class="text-center mb-6">
+                        <span class="text-4xl">📝</span>
+                        <h2 class="text-2xl font-bold text-slate-100 mt-2">Buat Akun Admin</h2>
+                        <p class="text-sm text-slate-400">Daftarkan akses operator baru sistem inventaris</p>
+                    </div>
+                    <form @submit.prevent="handleRegister" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300">Username Baru</label>
+                            <input v-model="username" type="text" required class="mt-1 w-full px-4 py-3 bg-slate-950 border border-slate-700 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300">Password</label>
+                            <div class="relative mt-1">
+                                <input :type="showPassword ? 'text' : 'password'" v-model="password" required class="w-full px-4 py-3 bg-slate-950 border border-slate-700 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70 pr-10">
+                                <button type="button" @click="showPassword = !showPassword" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-100">
+                                    <span v-if="showPassword">🔒</span>
+                                    <span v-else>👁️</span>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold py-3 rounded-2xl transition shadow-lg shadow-cyan-500/20">
+                            Daftar Sekarang
+                        </button>
+                    </form>
+                    <div class="mt-6 text-center text-sm">
+                        <p class="text-slate-400">Sudah punya akun? 
+                            <router-link to="/login" class="text-cyan-300 font-medium hover:text-cyan-200">Login Kembali</router-link>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            `,
+            setup() {
+                const username = ref('');
+                const password = ref('');
+                const showPassword = ref(false);
+                const router = VueRouter.useRouter();
+
+                const handleRegister = () => {
+                    axios.post('http://localhost:8080/api/register', {
+                        username: username.value,
+                        password: password.value
+                    })
+                    .then(() => {
+                        return axios.post('http://localhost:8080/api/login', {
+                            username: username.value,
+                            password: password.value
+                        });
+                    })
+                    .then(loginResponse => {
+                        const token = loginResponse.data.token || (loginResponse.data.data && loginResponse.data.data.token);
+                        if (token) {
+                            localStorage.setItem('isLoggedIn', 'true');
+                            localStorage.setItem('token', token);
+                            alert('Registrasi dan login berhasil! Mengalihkan ke Dashboard...');
+                            window.safeNavigate('/dashboard/barang');
+                        } else {
+                            alert('Registrasi berhasil, namun login otomatis gagal. Silakan login manual.');
+                            router.push('/login');
+                        }
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        const msg = error.response && error.response.data && error.response.data.messages ? error.response.data.messages.error : 'Gagal melakukan registrasi, periksa endpoint backend Anda.';
+                        alert('Gagal Registrasi: ' + msg);
+                    });
+                };
+
+                return { username, password, showPassword, handleRegister };
+            }
+        };
+
+        // --- 3. KOMPONEN VIEW: DASHBOARD PANEL ---
+        const DashboardComponent = {
+            template: `
+            <div class="container mx-auto p-6 max-w-7xl">
+                <header class="flex justify-between items-center mb-8 bg-slate-900/95 p-6 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.75)] border border-slate-700 text-slate-100">
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                            <i class="text-cyan-300">📦</i> E-Inventory System
+                        </h1>
+                        <p class="text-sm text-slate-400 mt-1">Sistem Manajemen Stok Barang Terintegrasi API</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="bg-slate-800 text-cyan-200 text-xs font-semibold px-3 py-1.5 rounded-full border border-slate-700">
+                            Frontend SPA Vue.js
+                        </span>
+                        <button @click="handleLogout" class="bg-rose-500 hover:bg-rose-400 text-slate-950 text-xs font-medium px-3 py-1.5 rounded-full transition shadow-sm shadow-rose-500/20">
+                            Logout 🚪
+                        </button>
+                    </div>
+                </header>
+                <router-view></router-view>
+            </div>
+            `,
+            setup() {
+                const router = VueRouter.useRouter();
+                const handleLogout = () => {
+                    localStorage.clear();
+                    alert('Sesi diakhiri. Kembali ke halaman awal...');
+                    router.push('/');
+                };
+                return { handleLogout };
+            }
+        };
+
+        // --- 4. KOMPONEN VIEW: TABEL DATA BARANG + MODAL FORM ---
+        const BarangComponent = {
+            template: `
+            <main class="bg-slate-950 rounded-3xl shadow-[0_30px_80px_-40px_rgba(15,23,42,0.9)] border border-slate-700 overflow-hidden">
+                <div class="p-6 border-b border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/85">
+                    <div>
+                        <h2 class="font-semibold text-lg text-slate-100">Daftar Stok Inventaris</h2>
+                        <p class="text-sm text-slate-400 mt-1">Kelola stok barang dengan tampilan dark mode mirip Discord.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button @click="bukaModalTambah" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-sm font-semibold px-4 py-2 rounded-full transition shadow-lg shadow-cyan-500/20 flex items-center gap-1">
+                            ➕ Tambah Barang
+                        </button>
+                        <button @click="ambilData" class="bg-slate-800 hover:bg-slate-700 text-slate-100 text-sm font-semibold px-4 py-2 rounded-full transition shadow-sm shadow-black/20 flex items-center gap-2">
+                            🔄 Refresh Data
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="loading" class="p-12 text-center text-slate-400">
+                    <span class="animate-pulse">Memuat data dari API Server...</span>
+                </div>
+
+                <div v-else class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/95 border-b border-slate-700 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                <th class="px-6 py-4">Kode Barang</th>
+                                <th class="px-6 py-4">Nama Barang</th>
+                                <th class="px-6 py-4">Kategori</th>
+                                <th class="px-6 py-4">Supplier</th>
+                                <th class="px-6 py-4 text-right">Harga</th>
+                                <th class="px-6 py-4 text-center">Stok</th>
+                                <th class="px-6 py-4 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800 text-sm">
+                            <tr v-for="item in barang" :key="item.id" class="hover:bg-slate-900/70 transition">
+                                <td class="px-6 py-4 font-mono text-xs font-bold text-cyan-300">{{ item.kode_barang }}</td>
+                                <td class="px-6 py-4 font-medium text-slate-100">{{ item.nama_barang }}</td>
+                                <td class="px-6 py-4">
+                                    <span class="bg-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded-full border border-slate-700">
+                                        {{ item.nama_kategori || 'Elektronik & Gadget' }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-slate-400">{{ item.nama_supplier || 'Supplier Utama' }}</td>
+                                <td class="px-6 py-4 text-right font-medium text-slate-100">
+                                    Rp {{ Number(item.harga).toLocaleString('id-ID') }}
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    <span :class="item.stok > 20 ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-amber-950 text-amber-300 border-amber-700'" 
+                                          class="text-xs font-semibold px-2.5 py-1 rounded-full border">
+                                        {{ item.stok }} pcs
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-center flex justify-center gap-2">
+                                    <button @click="bukaModalEdit(item)" class="text-cyan-300 hover:text-cyan-100 text-xs font-medium">Edit</button>
+                                    <span class="text-slate-600">|</span>
+                                    <button @click="hapusBarang(item.id)" class="text-rose-400 hover:text-rose-200 text-xs font-medium">Hapus</button>
+                                </td>
+                            </tr>
+                            <tr v-if="barang.length === 0">
+                                <td colspan="7" class="px-6 py-12 text-center text-slate-500">Tidak ada data barang yang tersedia.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div v-if="modalTerbuka" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div class="bg-slate-900 rounded-3xl shadow-2xl border border-slate-700 max-w-md w-full p-6">
+                        <h3 class="text-lg font-bold text-slate-100 mb-4">{{ isEdit ? 'Edit Data Barang' : 'Tambah Barang Baru' }}</h3>
+                        <form @submit.prevent="simpanBarang" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 uppercase">Kode Barang</label>
+                                <input v-model="form.kode_barang" type="text" required class="mt-1 w-full px-3 py-2 border border-slate-700 bg-slate-950 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 uppercase">Nama Barang</label>
+                                <input v-model="form.nama_barang" type="text" required class="mt-1 w-full px-3 py-2 border border-slate-700 bg-slate-950 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70">
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase">Harga</label>
+                                    <input v-model="form.harga" type="number" required class="mt-1 w-full px-3 py-2 border border-slate-700 bg-slate-950 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase">Stok Awal</label>
+                                    <input v-model="form.stok" type="number" required class="mt-1 w-full px-3 py-2 border border-slate-700 bg-slate-950 text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500/70">
+                                </div>
+                            </div>
+                            <div class="flex justify-end gap-3 pt-3">
+                                <button type="button" @click="modalTerbuka = false" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-full text-sm font-medium transition">Batal</button>
+                                <button type="submit" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-4 py-2 rounded-full text-sm font-medium transition">Simpan</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </main>
+            `,
+            setup() {
+                const barang = ref([]);
+                const loading = ref(true);
+                const modalTerbuka = ref(false);
+                const isEdit = ref(false);
+                const currentId = ref(null);
+
+                const form = ref({
+                    kode_barang: '',
+                    nama_barang: '',
+                    harga: 0,
+                    stok: 0,
+                    kategori_id: 1,
+                    supplier_id: 1
+                });
+
+                const ambilData = () => {
+                    loading.value = true;
+                    axios.get('http://localhost:8080/api/barang')
+                        .then(response => {
+                            barang.value = Array.isArray(response.data) ? response.data : (response.data.data || []);
+                            loading.value = false;
+                        })
+                        .catch(error => {
+                            console.error("Gagal mengambil data:", error);
+                            loading.value = false;
+                        });
+                };
+
+                const bukaModalTambah = () => {
+                    isEdit.value = false;
+                    currentId.value = null;
+                    form.value = { kode_barang: '', nama_barang: '', harga: 0, stok: 0, kategori_id: 1, supplier_id: 1 };
+                    modalTerbuka.value = true;
+                };
+
+                const bukaModalEdit = (item) => {
+                    isEdit.value = true;
+                    currentId.value = item.id;
+                    form.value = { ...item };
+                    modalTerbuka.value = true;
+                };
+
+                const simpanBarang = () => {
+                    if (isEdit.value) {
+                        axios.put(`http://localhost:8080/api/barang/${currentId.value}`, form.value)
+                            .then(() => {
+                                modalTerbuka.value = false;
+                                ambilData();
+                            }).catch(err => alert("Gagal mengupdate barang!"));
+                    } else {
+                        axios.post('http://localhost:8080/api/barang', form.value)
+                            .then(() => {
+                                modalTerbuka.value = false;
+                                ambilData();
+                            }).catch(err => alert("Gagal menyimpan barang baru!"));
+                    }
+                };
+
+                const hapusBarang = (id) => {
+                    if (confirm("Apakah Anda yakin ingin menghapus data inventaris ini?")) {
+                        axios.delete(`http://localhost:8080/api/barang/${id}`)
+                            .then(() => {
+                                ambilData();
+                            }).catch(err => alert("Gagal menghapus data barang!"));
+                    }
+                };
+
+                onMounted(() => { ambilData(); });
+                return { 
+                    barang, loading, ambilData, modalTerbuka, isEdit, 
+                    form, bukaModalTambah, bukaModalEdit, simpanBarang, hapusBarang 
+                };
+            }
+        };
+
+        // --- 5. CONFIG VUE ROUTER ENGINES ---
+        const routes = [
+            { path: '/', component: HomeComponent, name: 'home' },  // Landing page publik - DEFAULT
+            { path: '/home', component: HomeComponent, name: 'homepage' }, // Alias untuk home
+            { path: '/login', component: LoginComponent, name: 'login' },
+            { path: '/register', component: RegisterComponent, name: 'register' }, // Rute Baru ke Registrasi
+            { 
+                path: '/dashboard', 
+                component: DashboardComponent,
+                name: 'dashboard',
+                meta: { requiresAuth: true },
+                children: [
+                    { path: 'barang', component: BarangComponent, name: 'barang' }
+                ]
+            },
+            // Catch all - redirect to home if unknown route
+            { path: '/:pathMatch(.*)*', redirect: '/' }
+        ];
+
+        const router = VueRouter.createRouter({
+            history: VueRouter.createWebHashHistory(),
+            routes
+        });
+
+        // Ensure router starts at home on initial load
+        router.isReady().then(() => {
+            const currentPath = window.location.hash;
+            if (!currentPath || currentPath === '#' || currentPath === '#/') {
+                console.log('Router initialized at landing page');
+            } else {
+                console.log('Router current path:', currentPath);
+            }
+        });
+
+        // Helper navigation yang lebih andal: coba `router.push`, lalu fallback ke hash
+        window.safeNavigate = function(path) {
+            try {
+                router.push(path);
+                console.log('safeNavigate: router.push', path);
+            } catch (e) {
+                console.warn('safeNavigate: router.push failed', e);
+            }
+            try {
+                // pastikan format hash dimulai dengan '#/'
+                const hashPath = (path.startsWith('#') ? path : '#' + (path.startsWith('/') ? path : '/' + path));
+                window.location.hash = hashPath;
+                console.log('safeNavigate: set location.hash to', hashPath);
+            } catch (e) {
+                console.warn('safeNavigate: setting hash failed', e);
+            }
+        };
+
+        router.beforeEach((to, from, next) => {
+            const isAuthenticated = localStorage.getItem('isLoggedIn') === 'true';
+            
+            // Jika tidak ada route hash dan bukan initializing, redirect ke home
+            if (!window.location.hash || window.location.hash === '#') {
+                console.log('Routing: No hash detected, redirecting to home');
+                window.location.hash = '#/';
+                return;
+            }
+            
+            if (to.meta.requiresAuth && !isAuthenticated) {
+                alert('Akses Ilegal Ditolak! Sila Login Dahulu.');
+                window.safeNavigate('/login');
+                next('/login');
+            } else {
+                next();
+            }
+        });
+
+        const app = Vue.createApp({});
+        app.use(router);
+        app.mount('#app');
+    </script>
+</body>
+</html>
